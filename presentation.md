@@ -1,6 +1,6 @@
-## Fast tests in Ruby
+## Aggregated data in ActiveRecord
 
-London-Madrid, November, 2018
+London-Madrid, February, 2019
 
 [Carlos I. Peña](http://linkedin.com/in/carlosipe) / [@carlosipe](https://github.com/carlosipe)
 
@@ -10,178 +10,211 @@ London-Madrid, November, 2018
 
 ---
 
-## Problem
-
-- Slow CI wastes developer time.
-- Slow local tests make TDD impossible
+# The problem
 
 ---
 
-# Slow CI
-
-- `git commit && git push`
-- <div style="color: red"> Wait 10 minutes </div>
-- ..or switch context and start a new thing
-- (10 minutes later): <span style="color:red"> red tests </span> => switch context again 
+[ Image removed due privacy concerns ]
 
 ---
 
-## Slow local tests and TDD
+```rb
+class School < ActiveRecord::Base
+  has_many :students
+end
 
-Standard setup: `guard` or tests run after saving file
-```pre
-- Writes test. Save. Waits 3/4 seconds
-- `uninitialized constant UserRegistrationService (NameError)`
-- creates the file and the class. Hits save. Waits 3/4 seconds
-- ``initialize': wrong number of arguments (given 1, expected 0) (ArgumentError)`
-- Fix the error. Hits save. Waits 3/4 seconds
-...
+class Student < ActiveRecord::Base
+  belongs_to :school
+end
+
+
 ```
 
 ---
 
-## Why is this important?
+## The Rails Way
 
-Our intuitions about time are wrong.
-Becoming more efficient in our everyday work is our best move
-
-- 15 minutes/day per developer
-<br>
-(being conservative)
-
----
-
-10 developers: 2.5hs per day
-
----
-
-1 week off per month (!)
-<iframe src="https://giphy.com/embed/Kg22My7WG9vMc" width="480" height="270" frameBorder="0" class="giphy-embed" allowFullScreen></iframe><p><a href="https://giphy.com/gifs/summer-beach-vacation-Kg22My7WG9vMc">via GIPHY</a></p>
-
----
-
-Being more realistic:
-
----
-
-A few more projects per year
-<iframe src="https://giphy.com/embed/YQitE4YNQNahy" width="480" height="270" frameBorder="0" class="giphy-embed" allowFullScreen></iframe><p><a href="https://giphy.com/gifs/YQitE4YNQNahy">via GIPHY</a></p>
-
----
-
-The bigger the team the more we need to invest in efficiency.
-
----
-
-Our test suite is going to be even slower. 
-
----
-
-Red team has 10 people working full-time to make it <em style="font-size:48px">slower</em>
-
----
-
-## This isn't the biggest problem:
-
-<div class="fragment"> We are missing the benefits of unit testing </div>
-<div class="fragment"> Unit tests ensure less coupled code</div>
-
----
-
-## What is a unit test?
-
----
-
-## Integrated test
-
-I use the term integrated test to mean any test whose result (pass or fail) depends on the correctness of the implementation of more than one piece of non-trivial behavior.
-(J.B. Rainsberger dixit)
-
----
-
-## What is a unit?
-
-- Anything that can change independently should be isolated
-- Anything that is slow should be isolated.
-
----
-
-## Slow dependencies
-
-- <div class="fragment">Third party services</div>
-- <div class="fragment">Rails</div>
-
----
-
-## Subject under test vs collaborators
-
-Testing state vs testing behaviour (message passing)
-
----
-
-## Testing pyramid
-
-<img src="img/the-testing-pyramid.png" />
-
----
-
-## Our case:
-
-- Browser tests (integration)
-- Database test (Models/Queries) (unit)
-- Services tests (unit)
-
----
-
-## Gradual move
-
-- Two test suites
-- Different setup strategies
-
----
-
-## Two test suites
-
-- Two tests suites: fast and slow
-- `rake fast_test`
-- It doesn't make sense to have `norails_test` if we run it through `rails test`
-
----
-
-## Different setup strategies. Consistency
-
----
-
-## Services
-
-- DB calls and third-party calls are replaced by test doubles
-- It can use real "service" objects but it must avoid touching the db
-or doing an HTTP request
-
----
-
-## Models/Queries
-
-- Setup: Probably factories
-```ruby
-# Given
-user  = create(:user)
-admin = create(:user, :admin)
-# When
-admins = User.admin
-# Then
-assert_includes(admins, admin)
-refute_includes(admins, user)
+```rb
+# Controller
+@schools = School.all
+# View
+- @schools.each do |school|
+  = "Name: #{school.name}"
+  = "Students count: #{school.students.count}"
 ```
 
 ---
 
-## Integration
+## Presenters
 
-- Fixtures?
-- Sql dumps?
-- There's room for improvement here
+```rb
+# Controller
+@schools = School.all.map do |school|
+  SchoolPresenter.new(school) 
+end
+# View
+- @schools.each do |school|
+  = "Name: #{school.name}"
+  = "Students count: #{school.students_count}"
+```
 
 ---
 
-# Thanks
+## Presenters
+
+```rb
+class SchoolPresenter
+  def initialize(school)
+    @school = school
+  end
+
+  def name
+    school.name
+  end
+
+  def students_count
+    school.students.count
+  end
+end
+```
+
+---
+
+### but...
+
+---
+
+# N+1 queries 😱
+
+---
+
+## The Rails Way (without N+1)
+
+```rb
+# Controller
+@schools = School.includes(:students)
+# View
+- @schools.each do |school|
+  = "Name: #{school.name}"
+  = "Students count: #{school.students.count}"
+```
+
+---
+
+## Presenters (without N+1)
+
+```rb
+# Controller
+@schools = School.includes(:students).map do |school|
+  SchoolPresenter.new(school) 
+end
+# View
+- @schools.each do |school|
+  = "Name: #{school.name}"
+  = "Students count: #{school.students_count}"
+```
+
+---
+
+## is this better?
+
+---
+
+## nope
+
+---
+
+<h2> ¯\_(ツ)_/¯ </h2>
+
+---
+
+<ul>
+  <li >N+1 queries are inefficient </li>
+  <li class="fragment">But `includes` is worse 😱  </li>
+</ul>
+
+---
+
+###  the numbers
+<h3 class="fragment"> But let's see another option first </h3>
+
+---
+
+## Aggregated queries
+
+```rb
+# Controller
+@schools = SchoolsListing.listed_schools # data objects
+# Views
+- @schools.each do |school|
+  = "Name: #{school.name}"
+  = "Students count: #{school.students_count}"
+```
+
+---
+
+## Aggregated queries
+
+```rb
+class SchoolListing
+  ListedSchool = Struct.new(:name, :students_count)
+
+  def self.listed_schools
+    School.
+      joins(:students).
+      group("schools.id").
+      pluck("name",
+            "count(students.id) as students_count").
+      map {|data| ListedSchool.new(*data) }
+  end
+end
+```
+
+---
+
+## Demo
+
+https://github.com/carlosipe/activerecord-agg-queries
+
+---
+
+## Some notes
+
+<ul>
+  <li class="fragment">Don't "fix" N+1 with `includes` unless you're sure it's better </li>
+  <li class="fragment">Both the N+1 or the `includes` increase time geometrically</li>
+  <li class="fragment">That means you'll notice the problems in production</li>
+  <li class="fragment">The database is always faster</li> 
+</ul>
+
+---
+
+## More complex scenarios
+
+- Nested counts
+- Multiple counts (see page 1)
+
+---
+
+## Architecture concerns
+
+- Queries and data requirements should come together
+- Exposing a data object makes sure that there's only one place touching the db
+  - Easy to improve performance
+  - Easy to refactor (clear interfaces)
+
+---
+
+## Rails `counter cache` 
+#### (thanks @MariaCheca)
+
+<ul>
+  <li class="fragment"> If it has the word `cache` , it's not a fix. It's a patch. </li>
+  <li class="fragment"> It's a source of many problems (stale caches, callback hell)</li>
+  <li class="fragment"> It's not enough: see match_students in first page</li>
+
+---
+
+## Thanks
+
+
