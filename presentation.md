@@ -182,7 +182,7 @@ https://github.com/carlosipe/activerecord-agg-queries
 
 <ul>
   <li class="fragment">Don't "fix" N+1 with `includes` unless you're sure it's better </li>
-  <li class="fragment">Both the N+1 or the `includes` increase time geometrically</li>
+  <li class="fragment">Both the N+1 or the `includes` increase time linearly</li>
   <li class="fragment">That means you'll notice the problems in production</li>
   <li class="fragment">The database is always faster</li> 
 </ul>
